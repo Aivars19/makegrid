@@ -159,8 +159,24 @@
       accent-color: var(--accent);
     }
 
+    .grid-2 {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .grid-3 {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
     @media (max-width: 760px) {
       .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .grid-2, .grid-3 {
         grid-template-columns: 1fr;
       }
     }
@@ -176,12 +192,12 @@
     <form id="kmlForm" novalidate>
       <fieldset style="border:0;padding:0 0 10px 0;margin:0 0 10px 0">
         <legend style="font-weight:600;font-size:1.05em;margin-bottom:4px">Režģa centrs</legend>
-        <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+        <div class="grid-2">
           <label>
             MGRS (Prioritāte, ja norādīts)
             <input id="mgrs" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="e.g. 35VLD2445116162">
           </label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <label>
               Platums (Latitude)
               <input id="lat" type="text" inputmode="decimal" pattern="^-?\d+(\.\d+)?$" placeholder="e.g. 56.987" autocomplete="off">
@@ -196,7 +212,7 @@
 
       <fieldset style="border:0;padding:0 0 10px 0;margin:0 0 10px 0">
         <legend style="font-weight:600;font-size:1.05em;margin-bottom:4px">Režģis</legend>
-        <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+        <div class="grid-3">
           <label>
             Režģa platums (metros)
             <input id="size" type="text" inputmode="decimal" pattern="^\d+(\.\d+)?$" value="1000" placeholder="e.g. 1000" autocomplete="off">
