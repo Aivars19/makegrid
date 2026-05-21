@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Izveidot KML Režģi</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f766e">
   <style>
     :root {
       --bg0: #f7f5ef;
@@ -444,6 +446,38 @@
           "      </Placemark>";
       }
 
+      // Builds a single continuous polyline covering all horizontal and vertical
+      // grid lines using a boustrophedon (snake) pattern — no diagonal jumps ever.
+      // Phase 1: snake left↔right across all (ny+1) horizontal lines, bottom to top.
+      // Phase 2: snake down↕up across all (nx+1) vertical lines, starting from
+      //   wherever phase 1 ended and stepping only along the already-drawn top/bottom edges.
+      function buildSnakePath(x0, x1, y0, y1, nx, ny, cs, zone, northern) {
+        const pts = [];
+        for (let i = 0; i <= ny; i++) {
+          const y = y0 + i * cs;
+          if (i % 2 === 0) {
+            pts.push({ x: x0, y });
+            pts.push({ x: x1, y });
+          } else {
+            pts.push({ x: x1, y });
+            pts.push({ x: x0, y });
+          }
+        }
+        // After phase 1: if ny even, last point is (x1,y1); if odd, (x0,y1).
+        const fromRight = (ny % 2 === 0);
+        for (let j = 0; j <= nx; j++) {
+          const x = fromRight ? (x1 - j * cs) : (x0 + j * cs);
+          if (j % 2 === 0) {
+            if (j > 0) pts.push({ x, y: y1 }); // step along top edge
+            pts.push({ x, y: y0 });             // draw line downward
+          } else {
+            pts.push({ x, y: y0 });             // step along bottom edge
+            pts.push({ x, y: y1 });             // draw line upward
+          }
+        }
+        return pts.map(p => utmToLatLon(p.x, p.y, zone, northern));
+      }
+
       function kmlLabel(name, lon, lat, styleUrl) {
         return "\n    <Placemark>\n" +
           "      <name>" + escapeXml(name) + "</name>\n" +
@@ -479,34 +513,10 @@
         const minY = centerUtm.northing - halfH;
         const maxY = centerUtm.northing + halfH;
 
-        const gridLineSets = [];
-        const keypadLineSets = [];
         const labelPlacemarks = [];
         const keypadLabelPlacemarks = [];
 
-        const cornersUtm = [
-          { x: minX, y: minY },
-          { x: maxX, y: minY },
-          { x: maxX, y: maxY },
-          { x: minX, y: maxY },
-          { x: minX, y: minY }
-        ];
-        const cornersLonLat = cornersUtm.map((p) => utmToLatLon(p.x, p.y, zone, northern));
-        gridLineSets.push(cornersLonLat);
-
-        for (let i = 0; i <= countX; i += 1) {
-          const x = minX + i * cellSize;
-          const p1 = utmToLatLon(x, minY, zone, northern);
-          const p2 = utmToLatLon(x, maxY, zone, northern);
-          gridLineSets.push([p1, p2]);
-        }
-
-        for (let i = 0; i <= countY; i += 1) {
-          const y = minY + i * cellSize;
-          const p1 = utmToLatLon(minX, y, zone, northern);
-          const p2 = utmToLatLon(maxX, y, zone, northern);
-          gridLineSets.push([p1, p2]);
-        }
+        const gridSnakePath = buildSnakePath(minX, maxX, minY, maxY, countX, countY, cellSize, zone, northern);
 
         if (labelEverySquare) {
           for (let rowIndex = 0; rowIndex < countY; rowIndex += 1) {
@@ -537,32 +547,10 @@
         const cheatMaxY = maxY + cellSize;
         const cheatThird = cellSize / 3;
 
-        const cheatCornersUtm = [
-          { x: cheatMinX, y: cheatMinY },
-          { x: cheatMaxX, y: cheatMinY },
-          { x: cheatMaxX, y: cheatMaxY },
-          { x: cheatMinX, y: cheatMaxY },
-          { x: cheatMinX, y: cheatMinY }
-        ];
-        const cheatCornersLonLat = cheatCornersUtm.map((p) => utmToLatLon(p.x, p.y, zone, northern));
-        keypadLineSets.push(cheatCornersLonLat);
+        const keypadSnakePath = buildSnakePath(cheatMinX, cheatMaxX, cheatMinY, cheatMaxY, 3, 3, cheatThird, zone, northern);
 
         const keypadTitle = utmToLatLon((cheatMinX + cheatMaxX) / 2, cheatMaxY + (cellSize * 0.15), zone, northern);
         keypadLabelPlacemarks.push(kmlLabel("keypad", keypadTitle.lon, keypadTitle.lat, "#cellLabel"));
-
-        for (let i = 1; i <= 2; i += 1) {
-          const vx = cheatMinX + cheatThird * i;
-          const p1 = utmToLatLon(vx, cheatMinY, zone, northern);
-          const p2 = utmToLatLon(vx, cheatMaxY, zone, northern);
-          keypadLineSets.push([p1, p2]);
-        }
-
-        for (let i = 1; i <= 2; i += 1) {
-          const hy = cheatMinY + cheatThird * i;
-          const p1 = utmToLatLon(cheatMinX, hy, zone, northern);
-          const p2 = utmToLatLon(cheatMaxX, hy, zone, northern);
-          keypadLineSets.push([p1, p2]);
-        }
 
         const keypadRows = [
           [1, 2, 3],
@@ -581,11 +569,11 @@
         const folders =
           "\n    <Folder>\n" +
           "      <name>grid</name>" +
-          kmlMultiLinePlacemark("grid", gridLineSets, "#grid") +
+          kmlLineString("grid", gridSnakePath, "#grid") +
           "\n    </Folder>\n" +
           "    <Folder>\n" +
           "      <name>keypad</name>" +
-          kmlMultiLinePlacemark("keypad", keypadLineSets, "#boundary") +
+          kmlLineString("keypad", keypadSnakePath, "#boundary") +
           keypadLabelPlacemarks.join("") +
           "\n    </Folder>\n" +
           "    <Folder>\n" +
@@ -596,7 +584,7 @@
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
           "<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n" +
           "  <Document>\n" +
-          "    <name>Režģis</name>\n" +
+          "    <name>Režģis " + lat.toFixed(3) + " " + lon.toFixed(3) + "</name>\n" +
           "    <description>Centrs " + lat.toFixed(4) + "," + lon.toFixed(4) +
           "; šūnas izmērs " + cellSize.toFixed(1) +
           " m</description>\n\n" +
@@ -707,6 +695,28 @@
           });
         }
       });
+      // Coordinate pair parsing on the lat field (blur or Enter).
+      // Accepted formats: "56.123 23.231", "56.123,23.234", "56.123, 23.234"
+      (function () {
+        const latEl = document.getElementById("lat");
+        const lonEl = document.getElementById("lon");
+        function tryParsePair() {
+          const m = latEl.value.trim().match(/^(-?\d+(?:\.\d+)?)°?[\s,]+(-?\d+(?:\.\d+)?)°?$/);
+          if (!m) return;
+          const a = parseFloat(m[1]);
+          const b = parseFloat(m[2]);
+          if (!isFinite(a) || !isFinite(b)) return;
+          latEl.value = a;
+          lonEl.value = b;
+          filenameTouched = false;
+          updateFilename();
+        }
+        latEl.addEventListener("blur", tryParsePair);
+        latEl.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") tryParsePair();
+        });
+      }());
+
       // Prefill from URL params: ?34ABC1234512345 or ?54.45,26.2345
       (function prefillFromUrl() {
         const raw = (window.location.search || "").replace(/^\?/, "").trim();
@@ -745,7 +755,7 @@
         if (mgrs && mgrs !== "") {
           center = parseMgrs(mgrs);
           if (!center) {
-            setStatus("Invalid MGRS string.", true);
+            setStatus("Nederīga MGRS virkne.", true);
             return;
           }
           lat = center.lat;
@@ -754,48 +764,53 @@
           lat = Number(lat);
           lon = Number(lon);
           if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-            setStatus("Latitude must be between -90 and 90.", true);
+            setStatus("Platumam jābūt no -90 līdz 90.", true);
             return;
           }
           if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
-            setStatus("Longitude must be between -180 and 180.", true);
+            setStatus("Garumam jābūt no -180 līdz 180.", true);
             return;
           }
           if (lat === 0 && lon === 0) {
-            setStatus("Please enter valid center coordinates (0°, 0° not accepted).", true);
+            setStatus("Ievadiet derīgas centra koordinātes (0°, 0° nav pieļaujams).", true);
             return;
           }
         }
         if (!Number.isFinite(size) || size <= 0) {
-          setStatus("Grid width must be a positive number.", true);
+          setStatus("Režģa platumam jābūt pozitīvs skaitlis.", true);
           return;
         }
         if (!Number.isInteger(countX) || countX <= 0) {
-          setStatus("Squares X must be an integer between 2 and 25.", true);
+          setStatus("Kolonnu skaitam jābūt vesels skaitlis no 2 līdz 25.", true);
           return;
         }
         if (!Number.isInteger(countY) || countY <= 0) {
-          setStatus("Squares Y must be an integer between 2 and 25.", true);
+          setStatus("Rindu skaitam jābūt vesels skaitlis no 2 līdz 25.", true);
           return;
         }
         if (countX < 2 || countX > 25) {
-          setStatus("Squares X must be an integer between 2 and 25.", true);
+          setStatus("Kolonnu skaitam jābūt vesels skaitlis no 2 līdz 25.", true);
           return;
         }
         if (countY < 2 || countY > 25) {
-          setStatus("Squares Y must be an integer between 2 and 25.", true);
+          setStatus("Rindu skaitam jābūt vesels skaitlis no 2 līdz 25.", true);
           return;
         }
 
         try {
           const kml = generateGridKml(lat, lon, size, countX, countY, labelEverySquare);
           downloadTextFile(filename, kml);
-          setStatus("KML downloaded: " + filename, false);
+          setStatus("KML lejupielādēts: " + filename, false);
         } catch (error) {
-          setStatus("Failed to generate KML: " + (error && error.message ? error.message : String(error)), true);
+          setStatus("Neizdevās ģenerēt KML: " + (error && error.message ? error.message : String(error)), true);
         }
       });
     }());
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
   </script>
 </body>
 </html>
