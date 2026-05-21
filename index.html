@@ -232,6 +232,10 @@
           <input id="labelEverySquare" type="checkbox" checked>
           Etiķeti likt katrā rūtiņā (atceliet, lai liktu tikai rindu/kolonnu etiķetes)
         </label>
+        <label class="checkline">
+          <input id="drawKeypad" type="checkbox" checked>
+          Zīmēt keypad
+        </label>
 
       </fieldset>
 
@@ -499,7 +503,7 @@
         return "R" + String(index + 1);
       }
 
-      function generateGridKml(lat, lon, gridWidthM, countX, countY, labelEverySquare) {
+      function generateGridKml(lat, lon, gridWidthM, countX, countY, labelEverySquare, drawKeypad) {
         const centerUtm = latLonToUtm(lat, lon);
         const zone = centerUtm.zone;
         const northern = centerUtm.northernHemisphere;
@@ -541,29 +545,39 @@
           }
         }
 
-        const cheatMinX = minX;
-        const cheatMaxX = minX + cellSize;
-        const cheatMinY = maxY;
-        const cheatMaxY = maxY + cellSize;
-        const cheatThird = cellSize / 3;
+        let keypadFolder = "";
+        if (drawKeypad) {
+          const cheatMinX = minX;
+          const cheatMaxX = minX + cellSize;
+          const cheatMinY = maxY;
+          const cheatMaxY = maxY + cellSize;
+          const cheatThird = cellSize / 3;
 
-        const keypadSnakePath = buildSnakePath(cheatMinX, cheatMaxX, cheatMinY, cheatMaxY, 3, 3, cheatThird, zone, northern);
+          const keypadSnakePath = buildSnakePath(cheatMinX, cheatMaxX, cheatMinY, cheatMaxY, 3, 3, cheatThird, zone, northern);
 
-        const keypadTitle = utmToLatLon((cheatMinX + cheatMaxX) / 2, cheatMaxY + (cellSize * 0.15), zone, northern);
-        keypadLabelPlacemarks.push(kmlLabel("keypad", keypadTitle.lon, keypadTitle.lat, "#cellLabel"));
+          const keypadTitle = utmToLatLon((cheatMinX + cheatMaxX) / 2, cheatMaxY + (cellSize * 0.15), zone, northern);
+          keypadLabelPlacemarks.push(kmlLabel("keypad", keypadTitle.lon, keypadTitle.lat, "#cellLabel"));
 
-        const keypadRows = [
-          [1, 2, 3],
-          [4, 5, 6],
-          [7, 8, 9]
-        ];
-        for (let r = 0; r < 3; r += 1) {
-          for (let c = 0; c < 3; c += 1) {
-            const x = cheatMinX + (c * cheatThird) + (cheatThird / 2);
-            const y = cheatMaxY - (r * cheatThird) - (cheatThird / 2);
-            const p = utmToLatLon(x, y, zone, northern);
-            keypadLabelPlacemarks.push(kmlLabel(String(keypadRows[r][c]), p.lon, p.lat, "#cellLabel"));
+          const keypadRows = [
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9]
+          ];
+          for (let r = 0; r < 3; r += 1) {
+            for (let c = 0; c < 3; c += 1) {
+              const x = cheatMinX + (c * cheatThird) + (cheatThird / 2);
+              const y = cheatMaxY - (r * cheatThird) - (cheatThird / 2);
+              const p = utmToLatLon(x, y, zone, northern);
+              keypadLabelPlacemarks.push(kmlLabel(String(keypadRows[r][c]), p.lon, p.lat, "#cellLabel"));
+            }
           }
+
+          keypadFolder =
+            "    <Folder>\n" +
+            "      <name>keypad</name>" +
+            kmlLineString("keypad", keypadSnakePath, "#boundary") +
+            keypadLabelPlacemarks.join("") +
+            "\n    </Folder>\n";
         }
 
         const folders =
@@ -571,11 +585,7 @@
           "      <name>grid</name>" +
           kmlLineString("grid", gridSnakePath, "#grid") +
           "\n    </Folder>\n" +
-          "    <Folder>\n" +
-          "      <name>keypad</name>" +
-          kmlLineString("keypad", keypadSnakePath, "#boundary") +
-          keypadLabelPlacemarks.join("") +
-          "\n    </Folder>\n" +
+          keypadFolder +
           "    <Folder>\n" +
           "      <name>labels</name>" +
           labelPlacemarks.join("") +
@@ -641,7 +651,7 @@
       }
 
       // Compose filename from params
-      function suggestFilename(mgrs, lat, lon, countX, countY) {
+      function suggestFilename(mgrs, lat, lon, size) {
         let center = "";
         if (mgrs && mgrs.trim() !== "") {
           center = mgrs.trim().replace(/\s+/g, "");
@@ -652,8 +662,12 @@
             center = latf.toFixed(3) + "_" + lonf.toFixed(3);
           }
         }
-        let grid = (countX && countY) ? (countX + "x" + countY) : "";
-        return normalizeFilename(["GRG", center, grid].filter(Boolean).join("_") + ".kml");
+        let width = "";
+        const sizef = parseFloat(size);
+        if (isFinite(sizef) && sizef > 0) {
+          width = (sizef % 1 === 0 ? String(Math.round(sizef)) : String(sizef)) + "m";
+        }
+        return normalizeFilename(["GRG", center, width].filter(Boolean).join("_") + ".kml");
       }
 
       function downloadTextFile(filename, text) {
@@ -680,13 +694,12 @@
         const mgrs = document.getElementById("mgrs").value;
         const lat = document.getElementById("lat").value;
         const lon = document.getElementById("lon").value;
-        const countX = document.getElementById("countX").value;
-        const countY = document.getElementById("countY").value;
-        filenameInput.value = suggestFilename(mgrs, lat, lon, countX, countY);
+        const size = document.getElementById("size").value;
+        filenameInput.value = suggestFilename(mgrs, lat, lon, size);
       }
 
       // Update filename on any param change
-      ["mgrs", "lat", "lon", "countX", "countY"].forEach(function(id) {
+      ["mgrs", "lat", "lon", "size"].forEach(function(id) {
         const el = document.getElementById(id);
         if (el) {
           el.addEventListener("input", function() {
@@ -748,6 +761,7 @@
         const countX = Number(document.getElementById("countX").value);
         const countY = Number(document.getElementById("countY").value);
         const labelEverySquare = document.getElementById("labelEverySquare").checked;
+        const drawKeypad = document.getElementById("drawKeypad").checked;
         const filename = normalizeFilename(document.getElementById("filename").value);
 
         // MGRS takes priority
@@ -798,7 +812,7 @@
         }
 
         try {
-          const kml = generateGridKml(lat, lon, size, countX, countY, labelEverySquare);
+          const kml = generateGridKml(lat, lon, size, countX, countY, labelEverySquare, drawKeypad);
           downloadTextFile(filename, kml);
           setStatus("KML lejupielādēts: " + filename, false);
         } catch (error) {
